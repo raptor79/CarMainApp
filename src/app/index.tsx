@@ -75,12 +75,15 @@ const commonServices = [
 ];
 
 const isValidDateString = (value: string) => {
-  if (!value.trim()) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return false;
   }
 
-  const parsed = new Date(`${value}T12:00:00`);
-  return !Number.isNaN(parsed.getTime());
+  const [year, month, day] = value.split('-').map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year
+    && parsed.getUTCMonth() === month - 1
+    && parsed.getUTCDate() === day;
 };
 
 const createCalendarReminder = async (serviceTitle: string, dueDate: string) => {
@@ -145,14 +148,30 @@ export default function HomeScreen() {
     const cleanedMileage = Number(mileage);
     const cleanedCost = Number(cost);
     const cleanedNextDueMileage = nextDueMileage.trim() ? Number(nextDueMileage) : undefined;
+    const cleanedNextDueDate = nextDueDate.trim();
 
     if (!cleanedTitle || !date || Number.isNaN(cleanedMileage) || Number.isNaN(cleanedCost)) {
       Alert.alert('Missing info', 'Add a service type, date, mileage, and cost to save the record.');
       return;
     }
 
-    if (nextDueMileage.trim() && Number.isNaN(cleanedNextDueMileage)) {
-      Alert.alert('Invalid mileage', 'Next due mileage must be a valid number.');
+    if (!isValidDateString(date.trim())) {
+      Alert.alert('Invalid date', 'Enter the service date in YYYY-MM-DD format.');
+      return;
+    }
+
+    if (
+      nextDueMileage.trim()
+      && (cleanedNextDueMileage === undefined
+        || !Number.isFinite(cleanedNextDueMileage)
+        || cleanedNextDueMileage <= cleanedMileage)
+    ) {
+      Alert.alert('Invalid mileage', 'Next due mileage must be greater than the service mileage.');
+      return;
+    }
+
+    if (cleanedNextDueDate && !isValidDateString(cleanedNextDueDate)) {
+      Alert.alert('Invalid date', 'Enter the next service date in YYYY-MM-DD format.');
       return;
     }
 
@@ -164,15 +183,15 @@ export default function HomeScreen() {
       cost: cleanedCost,
       notes: notes.trim(),
       nextDueMileage: cleanedNextDueMileage,
-      nextDueDate: nextDueDate.trim() || undefined,
+      nextDueDate: cleanedNextDueDate || undefined,
     };
 
     setRecords((current) => [...current, newRecord].sort((a, b) => b.mileage - a.mileage));
 
-    if (nextDueDate.trim() && isValidDateString(nextDueDate)) {
+    if (cleanedNextDueDate) {
       Alert.alert(
         'Add calendar reminder?',
-        `Create a calendar reminder for ${new Date(`${nextDueDate.trim()}T12:00:00`).toLocaleDateString('en-US', {
+        `Create a calendar reminder for ${new Date(`${cleanedNextDueDate}T12:00:00`).toLocaleDateString('en-US', {
           month: 'short',
           day: 'numeric',
           year: 'numeric',
@@ -182,7 +201,7 @@ export default function HomeScreen() {
           {
             text: 'Add reminder',
             onPress: async () => {
-              await createCalendarReminder(cleanedTitle, nextDueDate.trim());
+              await createCalendarReminder(cleanedTitle, cleanedNextDueDate);
             },
           },
         ],
