@@ -1,9 +1,12 @@
 import * as Calendar from 'expo-calendar';
+import * as Crypto from 'expo-crypto';
 import { StatusBar } from 'expo-status-bar';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Platform,
   Pressable,
+  Share,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,53 +14,18 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-type MaintenanceRecord = {
-  id: string;
-  title: string;
-  date: string;
-  mileage: number;
-  cost: number;
-  notes: string;
-  nextDueMileage?: number;
-  nextDueDate?: string;
-};
+import type { MaintenanceRecord } from '../storage/maintenanceStorage.types';
+import {
+  deleteAllMaintenanceRecords,
+  getMaintenanceRecords,
+  removeMaintenanceRecord,
+  saveMaintenanceRecord,
+} from '../storage/maintenanceStorage';
 
 const currency = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
 });
-
-const initialRecords: MaintenanceRecord[] = [
-  {
-    id: '1',
-    title: 'Oil change',
-    date: '2026-09-12',
-    mileage: 125400,
-    cost: 72,
-    notes: 'Synthetic blend oil and new filter.',
-    nextDueMileage: 130000,
-    nextDueDate: '2026-12-15',
-  },
-  {
-    id: '2',
-    title: 'Brake inspection',
-    date: '2026-08-08',
-    mileage: 122600,
-    cost: 145,
-    notes: 'Pads looked healthy, no service needed.',
-    nextDueMileage: 128000,
-  },
-  {
-    id: '3',
-    title: 'Tire rotation',
-    date: '2026-07-04',
-    mileage: 119050,
-    cost: 58,
-    notes: 'Tires rotated and rebalanced.',
-    nextDueDate: '2026-10-30',
-  },
-];
 
 const today = new Date();
 const defaultDate = today.toISOString().slice(0, 10);
@@ -115,7 +83,8 @@ const createCalendarReminder = async (serviceTitle: string, dueDate: string) => 
 };
 
 export default function HomeScreen() {
-  const [records, setRecords] = useState<MaintenanceRecord[]>(initialRecords);
+  const [records, setRecords] = useState<MaintenanceRecord[]>([]);
+  const [isLoadingRecords, setIsLoadingRecords] = useState(true);
   const [selectedService, setSelectedService] = useState('Oil change');
   const [customService, setCustomService] = useState('');
   const [date, setDate] = useState(defaultDate);
@@ -125,10 +94,38 @@ export default function HomeScreen() {
   const [nextDueMileage, setNextDueMileage] = useState('');
   const [nextDueDate, setNextDueDate] = useState('');
 
+  useEffect(() => {
+    let isActive = true;
+
+    getMaintenanceRecords()
+      .then((savedRecords) => {
+        if (isActive) {
+          setRecords(savedRecords);
+        }
+      })
+      .catch(() => {
+        Alert.alert('Could not load records', 'Your saved maintenance data could not be opened.');
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsLoadingRecords(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
   const serviceTitle = customService.trim() || selectedService;
 
   const totalSpent = useMemo(
     () => records.reduce((sum, record) => sum + record.cost, 0),
+    [records],
+  );
+
+  const recentRecords = useMemo(
+    () => [...records].sort((a, b) => b.date.localeCompare(a.date)),
     [records],
   );
 
@@ -143,7 +140,7 @@ export default function HomeScreen() {
     return sorted[0];
   }, [records]);
 
-  const addRecord = () => {
+  const addRecord = async () => {
     const cleanedTitle = serviceTitle.trim();
     const cleanedMileage = Number(mileage);
     const cleanedCost = Number(cost);
@@ -186,7 +183,13 @@ export default function HomeScreen() {
       nextDueDate: cleanedNextDueDate || undefined,
     };
 
-    setRecords((current) => [...current, newRecord].sort((a, b) => b.mileage - a.mileage));
+    try {
+      await saveMaintenanceRecord(newRecord);
+      setRecords((current) => [...current, newRecord].sort((a, b) => b.date.localeCompare(a.date)));
+    } catch {
+      Alert.alert('Could not save record', 'Your maintenance record was not saved. Please try again.');
+      return;
+    }
 
     if (cleanedNextDueDate) {
       Alert.alert(
@@ -218,8 +221,58 @@ export default function HomeScreen() {
     setNextDueDate('');
   };
 
-  const removeRecord = (id: string) => {
-    setRecords((current) => current.filter((record) => record.id !== id));
+  const removeRecord = async (id: string) => {
+    try {
+      await removeMaintenanceRecord(id);
+      setRecords((current) => current.filter((record) => record.id !== id));
+    } catch {
+      Alert.alert('Could not remove record', 'Your maintenance record was not removed. Please try again.');
+    }
+  };
+
+  const exportRecords = async () => {
+    const backup = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), records }, null, 2);
+
+    try {
+      if (Platform.OS === 'web') {
+        const file = new Blob([backup], { type: 'application/json' });
+        const url = URL.createObjectURL(file);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `maintenance-records-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        return;
+      }
+
+      await Share.share({ title: 'Maintenance records backup', message: backup });
+    } catch {
+      Alert.alert('Export failed', 'Your maintenance records could not be exported. Please try again.');
+    }
+  };
+
+  const confirmDeleteAll = () => {
+    Alert.alert(
+      'Delete all maintenance data?',
+      'This permanently removes every saved service record from this device.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete all',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteAllMaintenanceRecords();
+              setRecords([]);
+            } catch {
+              Alert.alert('Could not delete data', 'Your saved maintenance data could not be deleted.');
+            }
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -268,6 +321,9 @@ export default function HomeScreen() {
               return (
                 <Pressable
                   key={service}
+                  accessibilityRole="button"
+                  accessibilityLabel={service}
+                  accessibilityState={{ selected: isSelected }}
                   onPress={() => {
                     setSelectedService(service);
                     setCustomService('');
@@ -284,6 +340,7 @@ export default function HomeScreen() {
 
           <TextInput
             value={customService}
+            accessibilityLabel="Custom service name"
             onChangeText={(value) => {
               setCustomService(value);
               if (value.trim()) {
@@ -297,12 +354,19 @@ export default function HomeScreen() {
           <View style={styles.twoColumnRow}>
             <View style={styles.halfWidth}>
               <Text style={styles.label}>Date</Text>
-              <TextInput value={date} onChangeText={setDate} style={styles.input} keyboardType="default" />
+              <TextInput
+                value={date}
+                accessibilityLabel="Service date, year month day"
+                onChangeText={setDate}
+                style={styles.input}
+                keyboardType="default"
+              />
             </View>
             <View style={styles.halfWidth}>
               <Text style={styles.label}>Mileage</Text>
               <TextInput
                 value={mileage}
+                accessibilityLabel="Service mileage"
                 onChangeText={setMileage}
                 style={styles.input}
                 keyboardType="numeric"
@@ -313,6 +377,7 @@ export default function HomeScreen() {
           <Text style={styles.label}>Cost</Text>
           <TextInput
             value={cost}
+            accessibilityLabel="Service cost in US dollars"
             onChangeText={setCost}
             style={styles.input}
             keyboardType="numeric"
@@ -325,6 +390,7 @@ export default function HomeScreen() {
               <Text style={styles.label}>Mileage</Text>
               <TextInput
                 value={nextDueMileage}
+                accessibilityLabel="Next service mileage"
                 onChangeText={setNextDueMileage}
                 style={styles.input}
                 keyboardType="numeric"
@@ -335,6 +401,7 @@ export default function HomeScreen() {
               <Text style={styles.label}>Date</Text>
               <TextInput
                 value={nextDueDate}
+                accessibilityLabel="Next service date, year month day"
                 onChangeText={setNextDueDate}
                 style={styles.input}
                 placeholder="2027-02-15"
@@ -345,13 +412,14 @@ export default function HomeScreen() {
           <Text style={styles.label}>Notes</Text>
           <TextInput
             value={notes}
+            accessibilityLabel="Service notes"
             onChangeText={setNotes}
             style={[styles.input, styles.textArea]}
             multiline
             placeholder="Brake fluid topped up..."
           />
 
-          <Pressable onPress={addRecord} style={styles.primaryButton}>
+          <Pressable accessibilityRole="button" onPress={addRecord} style={styles.primaryButton}>
             <Text style={styles.primaryButtonText}>Save record</Text>
           </Pressable>
         </View>
@@ -359,7 +427,12 @@ export default function HomeScreen() {
         <View style={styles.listCard}>
           <Text style={styles.sectionTitle}>Recent maintenance</Text>
 
-          {records.map((record) => (
+          {isLoadingRecords ? <Text style={styles.emptyState}>Loading records...</Text> : null}
+          {!isLoadingRecords && recentRecords.length === 0 ? (
+            <Text style={styles.emptyState}>No service records yet.</Text>
+          ) : null}
+
+          {recentRecords.map((record) => (
             <View key={record.id} style={styles.recordItem}>
               <View style={styles.recordHeader}>
                 <View>
@@ -372,7 +445,12 @@ export default function HomeScreen() {
                     })}
                   </Text>
                 </View>
-                <Pressable onPress={() => removeRecord(record.id)} style={styles.removeButton}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${record.title} record`}
+                  onPress={() => removeRecord(record.id)}
+                  style={styles.removeButton}
+                >
                   <Text style={styles.removeButtonText}>Remove</Text>
                 </Pressable>
               </View>
@@ -400,6 +478,32 @@ export default function HomeScreen() {
               {record.notes ? <Text style={styles.recordNotes}>{record.notes}</Text> : null}
             </View>
           ))}
+        </View>
+
+        <View style={styles.privacySection}>
+          <Text style={styles.sectionTitle}>Your data</Text>
+          <Text style={styles.privacyNote}>
+            {Platform.OS === 'web'
+              ? 'Saved in this browser. Browser storage is not encrypted.'
+              : 'Encrypted on this device.'}
+          </Text>
+          <View style={styles.dataActions}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={exportRecords}
+              style={styles.exportButton}
+            >
+              <Text style={styles.exportButtonText}>Export JSON</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              disabled={isLoadingRecords || records.length === 0}
+              onPress={confirmDeleteAll}
+              style={[styles.deleteAllButton, (isLoadingRecords || records.length === 0) && styles.disabledButton]}
+            >
+              <Text style={styles.deleteAllButtonText}>Delete all</Text>
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -536,8 +640,10 @@ const styles = StyleSheet.create({
     borderColor: '#c7d2fe',
     borderWidth: 1,
     borderRadius: 999,
+    minHeight: 44,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    justifyContent: 'center',
   },
   serviceChipSelected: {
     backgroundColor: '#2563eb',
@@ -556,6 +662,7 @@ const styles = StyleSheet.create({
     borderColor: '#d1d5db',
     borderWidth: 1,
     borderRadius: 12,
+    minHeight: 48,
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 15,
@@ -577,8 +684,10 @@ const styles = StyleSheet.create({
   primaryButton: {
     backgroundColor: '#2563eb',
     borderRadius: 12,
+    minHeight: 48,
     paddingVertical: 14,
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 6,
   },
   primaryButtonText: {
@@ -590,6 +699,57 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 20,
     padding: 18,
+  },
+  emptyState: {
+    color: '#6b7280',
+    fontSize: 14,
+    paddingVertical: 8,
+  },
+  privacySection: {
+    paddingVertical: 20,
+  },
+  privacyNote: {
+    color: '#4b5563',
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 14,
+  },
+  dataActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  exportButton: {
+    backgroundColor: '#1f2937',
+    borderRadius: 10,
+    flex: 1,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  exportButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  deleteAllButton: {
+    backgroundColor: '#fff',
+    borderColor: '#b91c1c',
+    borderWidth: 1,
+    borderRadius: 10,
+    flex: 1,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  disabledButton: {
+    opacity: 0.45,
+  },
+  deleteAllButtonText: {
+    color: '#b91c1c',
+    fontSize: 14,
+    fontWeight: '700',
   },
   recordItem: {
     borderWidth: 1,
@@ -617,8 +777,12 @@ const styles = StyleSheet.create({
   removeButton: {
     backgroundColor: '#fee2e2',
     borderRadius: 999,
+    minHeight: 44,
+    minWidth: 44,
     paddingHorizontal: 8,
     paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   removeButtonText: {
     color: '#b91c1c',

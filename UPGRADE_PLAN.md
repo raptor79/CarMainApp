@@ -30,7 +30,8 @@ This document outlines the planned upgrades for the car maintenance app, grouped
 - Increase touch target sizes for buttons and inputs
 - Adjust spacing for smaller iPhone screens
 - Improve accessibility labels and readable contrast
-- Support dark mode and dynamic text sizing
+- Match the app's light or dark appearance to the phone's system setting, including changes while the app is open
+- Support dynamic text sizing
 
 #### 5. Add privacy and security defaults
 - Implement secure local storage
