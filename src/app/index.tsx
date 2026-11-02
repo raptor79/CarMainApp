@@ -1,5 +1,4 @@
 import * as Calendar from 'expo-calendar';
-import * as Crypto from 'expo-crypto';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -27,8 +26,7 @@ const currency = new Intl.NumberFormat('en-US', {
   currency: 'USD',
 });
 
-const today = new Date();
-const defaultDate = today.toISOString().slice(0, 10);
+const getDefaultDate = () => new Date().toISOString().slice(0, 10);
 const commonServices = [
   'Oil change',
   'Brake inspection',
@@ -54,6 +52,34 @@ const isValidDateString = (value: string) => {
     && parsed.getUTCDate() === day;
 };
 
+type DueStatus = 'Overdue' | 'Due soon' | 'On track' | 'No reminder';
+
+const getDueStatus = (
+  record: MaintenanceRecord | undefined,
+  currentMileage: number,
+  todayString: string,
+): DueStatus => {
+  if (!record?.nextDueMileage && !record?.nextDueDate) {
+    return 'No reminder';
+  }
+
+  const mileageOverdue = record.nextDueMileage !== undefined
+    && currentMileage >= record.nextDueMileage;
+  const dateOverdue = record.nextDueDate !== undefined && record.nextDueDate <= todayString;
+
+  if (mileageOverdue || dateOverdue) {
+    return 'Overdue';
+  }
+
+  const mileageDueSoon = record.nextDueMileage !== undefined
+    && record.nextDueMileage - currentMileage <= 500;
+  const dateDueSoon = record.nextDueDate !== undefined
+    && Date.parse(`${record.nextDueDate}T00:00:00Z`) - Date.parse(`${todayString}T00:00:00Z`)
+      <= 30 * 24 * 60 * 60 * 1000;
+
+  return mileageDueSoon || dateDueSoon ? 'Due soon' : 'On track';
+};
+
 const createCalendarReminder = async (serviceTitle: string, dueDate: string) => {
   try {
     const { status } = await Calendar.requestCalendarPermissionsAsync();
@@ -77,7 +103,7 @@ const createCalendarReminder = async (serviceTitle: string, dueDate: string) => 
     });
 
     Alert.alert('Reminder added', `A calendar reminder was scheduled for ${dueDate}.`);
-  } catch (error) {
+  } catch {
     Alert.alert('Could not add reminder', 'Please check your calendar settings and try again.');
   }
 };
@@ -87,12 +113,13 @@ export default function HomeScreen() {
   const [isLoadingRecords, setIsLoadingRecords] = useState(true);
   const [selectedService, setSelectedService] = useState('Oil change');
   const [customService, setCustomService] = useState('');
-  const [date, setDate] = useState(defaultDate);
+  const [date, setDate] = useState(() => getDefaultDate());
   const [mileage, setMileage] = useState('126200');
   const [cost, setCost] = useState('89');
   const [notes, setNotes] = useState('');
   const [nextDueMileage, setNextDueMileage] = useState('');
   const [nextDueDate, setNextDueDate] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     let isActive = true;
@@ -124,21 +151,119 @@ export default function HomeScreen() {
     [records],
   );
 
-  const recentRecords = useMemo(
-    () => [...records].sort((a, b) => b.date.localeCompare(a.date)),
-    [records],
-  );
+  const recentRecords = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
 
-  const nextServiceDue = useMemo(() => {
-    const sorted = [...records].sort((a, b) => b.mileage - a.mileage);
-    const highestMileage = sorted[0]?.mileage ?? 0;
-    return highestMileage + 5000;
-  }, [records]);
+    return [...records]
+      .sort((a, b) => b.date.localeCompare(a.date) || b.mileage - a.mileage)
+      .filter((record) => {
+        if (!normalizedQuery) {
+          return true;
+        }
+
+        const haystack = [
+          record.title,
+          record.notes,
+          record.date,
+          record.mileage.toString(),
+          record.cost.toString(),
+          record.nextDueDate ?? '',
+          record.nextDueMileage?.toString() ?? '',
+        ]
+          .join(' ')
+          .toLowerCase();
+
+        return haystack.includes(normalizedQuery);
+      });
+  }, [records, searchQuery]);
+
+  const todayString = getDefaultDate();
+
+  const nextServiceDue = (() => {
+    if (!records.length) {
+      return null;
+    }
+
+    const candidates: { value: number; kind: 'mileage' | 'date' }[] = records.flatMap((record) => {
+      const options: { value: number; kind: 'mileage' | 'date' }[] = [];
+
+      if (record.nextDueMileage !== undefined) {
+        options.push({ value: record.nextDueMileage, kind: 'mileage' });
+      }
+
+      if (record.nextDueDate) {
+        const dateValue = Date.parse(`${record.nextDueDate}T12:00:00Z`);
+        options.push({ value: dateValue, kind: 'date' });
+      }
+
+      return options;
+    }).sort((a, b) => a.value - b.value);
+
+    if (!candidates.length) {
+      const highestMileage = [...records].sort((a, b) => b.mileage - a.mileage)[0]?.mileage ?? 0;
+      return { label: `${(highestMileage + 5000).toLocaleString()} mi`, type: 'mileage' as const };
+    }
+
+    const nextCandidate = candidates[0];
+
+    if (nextCandidate.kind === 'mileage') {
+      return { label: `${nextCandidate.value.toLocaleString()} mi`, type: 'mileage' as const };
+    }
+
+    return {
+      label: new Date(nextCandidate.value).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      }),
+      type: 'date' as const,
+    };
+  })();
 
   const lastService = useMemo(() => {
     const sorted = [...records].sort((a, b) => b.mileage - a.mileage);
     return sorted[0];
   }, [records]);
+
+  const currentMileage = lastService?.mileage ?? 0;
+  const dueStatus = getDueStatus(lastService, currentMileage, todayString);
+  const nextReminder = lastService?.nextDueDate
+    ? new Date(`${lastService.nextDueDate}T12:00:00`).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    })
+    : lastService?.nextDueMileage
+      ? `${lastService.nextDueMileage.toLocaleString()} mi`
+      : 'Not set';
+
+  const reminderSummary = (() => {
+    if (!lastService) {
+      return 'Add a service to create a reminder.';
+    }
+
+    if (lastService.nextDueMileage !== undefined && lastService.nextDueDate) {
+      return `Reminder set for ${lastService.nextDueMileage.toLocaleString()} mi or ${new Date(`${lastService.nextDueDate}T12:00:00`).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })}.`;
+    }
+
+    if (lastService.nextDueMileage !== undefined) {
+      return `Reminder set for ${lastService.nextDueMileage.toLocaleString()} mi.`;
+    }
+
+    if (lastService.nextDueDate) {
+      return `Reminder set for ${new Date(`${lastService.nextDueDate}T12:00:00`).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })}.`;
+    }
+
+    return 'No reminder is currently configured.';
+  })();
 
   const addRecord = async () => {
     const cleanedTitle = serviceTitle.trim();
@@ -185,7 +310,7 @@ export default function HomeScreen() {
 
     try {
       await saveMaintenanceRecord(newRecord);
-      setRecords((current) => [...current, newRecord].sort((a, b) => b.date.localeCompare(a.date)));
+      setRecords((current) => [...current, newRecord].sort((a, b) => b.date.localeCompare(a.date) || b.mileage - a.mileage));
     } catch {
       Alert.alert('Could not save record', 'Your maintenance record was not saved. Please try again.');
       return;
@@ -213,7 +338,7 @@ export default function HomeScreen() {
 
     setSelectedService('Oil change');
     setCustomService('');
-    setDate(defaultDate);
+    setDate(getDefaultDate());
     setMileage(String(cleanedMileage + 500));
     setCost('');
     setNotes('');
@@ -285,14 +410,19 @@ export default function HomeScreen() {
             <Text style={styles.title}>2022 Toyota Camry</Text>
           </View>
           <View style={styles.badge}>
-            <Text style={styles.badgeText}>Healthy</Text>
+            <Text style={styles.badgeText}>{dueStatus}</Text>
           </View>
         </View>
 
         <View style={styles.heroCard}>
           <Text style={styles.heroLabel}>Current mileage</Text>
-          <Text style={styles.heroValue}>{lastService?.mileage.toLocaleString() ?? '0'} mi</Text>
-          <Text style={styles.heroMeta}>Next service due around {nextServiceDue.toLocaleString()} mi</Text>
+          <Text style={styles.heroValue}>{currentMileage.toLocaleString()} mi</Text>
+          <Text style={styles.heroMeta}>
+            {nextServiceDue
+              ? `Next reminder target: ${nextServiceDue.label}`
+              : 'No service reminder set yet'}
+          </Text>
+          <Text style={styles.heroMetaSmall}>{reminderSummary}</Text>
         </View>
 
         <View style={styles.statsGrid}>
@@ -306,7 +436,7 @@ export default function HomeScreen() {
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>Next reminder</Text>
-            <Text style={styles.statValue}>{currency.format(150)}</Text>
+            <Text style={styles.statValue}>{nextReminder}</Text>
           </View>
         </View>
 
@@ -427,9 +557,21 @@ export default function HomeScreen() {
         <View style={styles.listCard}>
           <Text style={styles.sectionTitle}>Recent maintenance</Text>
 
+          <TextInput
+            value={searchQuery}
+            accessibilityLabel="Search maintenance records"
+            onChangeText={setSearchQuery}
+            placeholder="Search by service, notes, date, or mileage"
+            style={styles.input}
+          />
+
           {isLoadingRecords ? <Text style={styles.emptyState}>Loading records...</Text> : null}
           {!isLoadingRecords && recentRecords.length === 0 ? (
-            <Text style={styles.emptyState}>No service records yet.</Text>
+            <Text style={styles.emptyState}>
+              {searchQuery.trim()
+                ? 'No maintenance records match your search.'
+                : 'No service records yet.'}
+            </Text>
           ) : null}
 
           {recentRecords.map((record) => (
@@ -572,6 +714,12 @@ const styles = StyleSheet.create({
     color: '#dbeafe',
     fontSize: 14,
     marginTop: 12,
+  },
+  heroMetaSmall: {
+    color: '#bfdbfe',
+    fontSize: 12,
+    marginTop: 8,
+    lineHeight: 18,
   },
   statsGrid: {
     flexDirection: 'row',

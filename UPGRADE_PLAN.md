@@ -114,7 +114,8 @@ This document outlines the planned upgrades for the car maintenance app, grouped
 ### Medium / High Complexity
 
 #### 16. Add export and reporting features
-- Export service history as CSV or PDF
+- Export service history as CSV, JSON, or text files
+- Export service history as PDF
 - Generate annual maintenance summaries
 - Share records with mechanics or service providers
 - Support professional use cases and reporting
