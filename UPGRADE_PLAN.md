@@ -15,19 +15,25 @@ This document outlines the planned upgrades for the car maintenance app, grouped
 - Display reminder details alongside each maintenance record
 - Allow users to choose either mileage-based, date-based, or both
 
-#### 2. Add calendar reminder integration
+#### 2. Sort maintenance history newest to oldest
+- Sort history by service date, with the newest service first
+- Keep the order consistent after records are added or removed
+- Use higher mileage as a tie-breaker when service dates match
+
+#### 3. Add calendar reminder integration
 - Ask the user before creating a calendar reminder
 - Request calendar permission only when needed
 - Create an event for the next service date in the iPhone calendar
 - Keep reminder creation visible and understandable for end users
 
-#### 3. Improve iPhone UX and accessibility
+#### 4. Improve iPhone UX and accessibility
 - Increase touch target sizes for buttons and inputs
 - Adjust spacing for smaller iPhone screens
 - Improve accessibility labels and readable contrast
-- Support dark mode and dynamic text sizing
+- Match the app's light or dark appearance to the phone's system setting, including changes while the app is open
+- Support dynamic text sizing
 
-#### 4. Add privacy and security defaults
+#### 5. Add privacy and security defaults
 - Implement secure local storage
 - Minimize stored personal data
 - Add clear consent for notifications and calendar access
@@ -35,19 +41,19 @@ This document outlines the planned upgrades for the car maintenance app, grouped
 
 ### High / Medium Complexity
 
-#### 5. Add maintenance reminders and due-date logic
+#### 6. Add maintenance reminders and due-date logic
 - Show “due soon,” “overdue,” and “healthy” vehicle status
 - Calculate next service based on mileage or date
 - Trigger reminder alerts before a service is due
 - Support custom reminder windows such as 7 days or 500 miles
 
-#### 6. Add multi-vehicle support
+#### 7. Add multi-vehicle support
 - Allow users to store more than one vehicle
 - Show separate service histories per car
 - Track each vehicle’s mileage and reminders independently
 - Add a garage dashboard overview
 
-#### 7. Add expense tracking and budgets
+#### 8. Add expense tracking and budgets
 - Track costs by category
 - Show monthly and yearly maintenance totals
 - Add budget warnings for expensive service periods
@@ -55,13 +61,13 @@ This document outlines the planned upgrades for the car maintenance app, grouped
 
 ### High / High Complexity
 
-#### 8. Add cloud sync and account-based backup
+#### 9. Add cloud sync and account-based backup
 - Allow secure login and account sync
 - Sync maintenance records across devices
 - Add cloud backup for service history
 - Implement secure authentication and session handling
 
-#### 9. Add photo and invoice management
+#### 10. Add photo and invoice management
 - Let users attach service receipts or photos
 - Store images securely and optionally remove metadata
 - Allow filtering records by receipts or service type
@@ -73,19 +79,19 @@ This document outlines the planned upgrades for the car maintenance app, grouped
 
 ### Medium / Low Complexity
 
-#### 10. Add search and filtering
+#### 11. Add search and filtering
 - Search by service name, date, or notes
 - Filter by service type, mileage, or cost
 - Sort by newest, oldest, or highest cost
 - Improve records browsing on mobile screens
 
-#### 11. Add recurring service templates
+#### 12. Add recurring service templates
 - Predefine common maintenance routines
 - Let users save custom service templates
 - Auto-fill recurring service details for common tasks
 - Reduce manual entry for repeated services
 
-#### 12. Add better form validation
+#### 13. Add better form validation
 - Validate mileage, cost, and dates before saving
 - Prevent invalid service entries
 - Show helpful inline error messages
@@ -93,13 +99,13 @@ This document outlines the planned upgrades for the car maintenance app, grouped
 
 ### Medium / Medium Complexity
 
-#### 13. Add service calendar view
+#### 14. Add service calendar view
 - Show upcoming maintenance in a calendar format
 - Highlight due dates and overdue items
 - Allow quick access to service records from the calendar
 - Improve long-term maintenance planning
 
-#### 14. Add maintenance history insights
+#### 15. Add maintenance history insights
 - Show service frequency trends
 - Highlight most expensive repair categories
 - Compare repair costs over time
@@ -107,8 +113,9 @@ This document outlines the planned upgrades for the car maintenance app, grouped
 
 ### Medium / High Complexity
 
-#### 15. Add export and reporting features
-- Export service history as CSV or PDF
+#### 16. Add export and reporting features
+- Export service history as CSV, JSON, or text files
+- Export service history as PDF
 - Generate annual maintenance summaries
 - Share records with mechanics or service providers
 - Support professional use cases and reporting
@@ -119,20 +126,20 @@ This document outlines the planned upgrades for the car maintenance app, grouped
 
 ### Low / Low Complexity
 
-#### 16. Add polish improvements and animations
+#### 17. Add polish improvements and animations
 - Add subtle transitions and micro-interactions
 - Improve empty-state screens
 - Refine list cards and spacing consistency
 - Increase the premium feel of the app
 
-#### 17. Add service notes templates
+#### 18. Add service notes templates
 - Include reusable notes blocks for common maintenance work
 - Reduce typing for maintenance comments
 - Improve consistency across service entries
 
 ### Low / Medium Complexity
 
-#### 18. Add advanced reminders and notifications
+#### 19. Add advanced reminders and notifications
 - Push notifications for upcoming services
 - Custom reminder channels and schedules
 - Local reminder batching for multiple vehicles
@@ -140,7 +147,7 @@ This document outlines the planned upgrades for the car maintenance app, grouped
 
 ### Low / High Complexity
 
-#### 19. Add AI-powered service suggestions
+#### 20. Add AI-powered service suggestions
 - Recommend service intervals based on historical data
 - Detect patterns in maintenance records
 - Suggest likely next maintenance actions
@@ -152,6 +159,7 @@ This document outlines the planned upgrades for the car maintenance app, grouped
 
 ### Phase 1: Immediate improvements
 - Reminder fields for next service
+- Chronological maintenance history, newest service first
 - Calendar reminder confirmation
 - iPhone UX and accessibility improvements
 - Security and privacy defaults
@@ -190,6 +198,7 @@ This document outlines the planned upgrades for the car maintenance app, grouped
 The best near-term upgrades are the ones that improve maintenance planning and reliability for users while staying aligned with iPhone usability and secure app design. The highest value roadmap is:
 
 - reminder fields
+- newest-to-oldest maintenance history
 - calendar integration
 - due-date logic
 - multi-vehicle support

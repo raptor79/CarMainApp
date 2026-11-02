@@ -9,7 +9,7 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSCalendarsUsageDescription": "This app adds service reminders to your calendar so you remember future maintenance." 
+        "NSCalendarsUsageDescription": "This app adds service reminders to your calendar so you remember future maintenance."
       }
     },
     "android": {
@@ -25,7 +25,14 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ],
+      "expo-secure-store"
     ]
   }
 }
